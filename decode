@@ -30,26 +30,43 @@ for f in french:
     # Hence all hypotheses in stacks[i] represent translations of 
     # the first i words of the input sentence. You should generalize
     # this so that they can represent translations of *any* i words.
-    hypothesis = namedtuple("hypothesis", "logprob, lm_state, predecessor, phrase")
-    initial_hypothesis = hypothesis(0.0, lm.begin(), None, None)
+    hypothesis = namedtuple("hypothesis", "logprob, lm_state, predecessor, phrase, coverage_vector")
+    blank_coverage_vector = tuple([False] * len(f))
+    initial_hypothesis = hypothesis(0.0, lm.begin(), None, None, blank_coverage_vector)
     stacks = [{} for _ in f] + [{}]
-    stacks[0][lm.begin()] = initial_hypothesis
-    #print("STACKS: ", stacks)
-
+    stacks[0][hypothesis.coverage_vector] = initial_hypothesis
+    
     for i, stack in enumerate(stacks[:-1]):
         for h in sorted(stack.itervalues(),key=lambda h: -h.logprob)[:opts.s]: # prune
-            for j in xrange(i+1,len(f)+1):
-                if f[i:j] in tm:
-                    for phrase in tm[f[i:j]]:
-                        logprob = h.logprob + phrase.logprob
-                        lm_state = h.lm_state
-                        for word in phrase.english.split():
-                            (lm_state, word_logprob) = lm.score(lm_state, word)
-                            logprob += word_logprob
-                        logprob += lm.end(lm_state) if j == len(f) else 0.0
-                        new_hypothesis = hypothesis(logprob, lm_state, h, phrase)
-                        if lm_state not in stacks[j] or stacks[j][lm_state].logprob < logprob: # second case is recombination
-                            stacks[j][lm_state] = new_hypothesis 
+
+            for k in xrange(len(f)):
+                if h.coverage_vector[k]:
+                    continue # this word is already covered, cannot form new phrase starting here
+                for j in xrange(1, len(f) - k + 1):
+                    if (sum(h.coverage_vector[k:k+j]) > 0): 
+                        # includes words already covered, cannot form new phrase
+                        break
+                    if f[k:k+j] in tm:
+                        for phrase in tm[f[k:k+j]]:
+                            logprob = h.logprob + phrase.logprob
+                            lm_state = h.lm_state
+                            for word in phrase.english.split():
+                                (lm_state, word_logprob) = lm.score(lm_state, word)
+                                logprob += word_logprob
+                            logprob += lm.end(lm_state) if i+j == len(f) else 0.0
+                            new_coverage_vector = list(h.coverage_vector[:])
+                            new_coverage_vector[k:k+j] = [True] * j
+                            new_coverage_vector = tuple(new_coverage_vector)
+                            new_hypothesis = hypothesis(logprob, lm_state, h, phrase, new_coverage_vector)
+                            
+                            stack_to_add = i + j
+
+                            if new_coverage_vector not in stacks[stack_to_add] or stacks[stack_to_add][new_coverage_vector].logprob < logprob:
+                                # second case is recombination  
+
+                                new_hypothesis = hypothesis(logprob, lm_state, h, phrase, new_coverage_vector)
+                                stacks[stack_to_add][new_coverage_vector] = new_hypothesis
+
     winner = max(stacks[-1].itervalues(), key=lambda h: h.logprob)
     def extract_english(h): 
         return "" if h.predecessor is None else "%s%s " % (extract_english(h.predecessor), h.phrase.english)
@@ -60,4 +77,4 @@ for f in french:
             return 0.0 if h.predecessor is None else h.phrase.logprob + extract_tm_logprob(h.predecessor)
         tm_logprob = extract_tm_logprob(winner)
         sys.stderr.write("LM = %f, TM = %f, Total = %f\n" % 
-            (winner.logprob - tm_logprob, tm_logprob, winner.logprob))
+                (winner.logprob - tm_logprob, tm_logprob, winner.logprob))
