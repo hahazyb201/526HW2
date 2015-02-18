@@ -25,11 +25,7 @@ for word in set(sum(french,())):
 
 sys.stderr.write("Decoding %s...\n" % (opts.input,))
 for f in french:
-    # The following code implements a monotone decoding
-    # algorithm (one that doesn't permute the target phrases).
-    # Hence all hypotheses in stacks[i] represent translations of 
-    # the first i words of the input sentence. You should generalize
-    # this so that they can represent translations of *any* i words.
+
     hypothesis = namedtuple("hypothesis", "logprob, lm_state, predecessor, phrase, coverage_vector")
     blank_coverage_vector = tuple([False] * len(f))
     initial_hypothesis = hypothesis(0.0, lm.begin(), None, None, blank_coverage_vector)
